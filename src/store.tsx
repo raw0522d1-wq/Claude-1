@@ -16,7 +16,9 @@ import type {
   WorkoutLog,
 } from './types'
 import { MILESTONES } from './data/milestones'
+import { getProgram } from './data/programs'
 import { calcStreaks, todayISO, weeksSince } from './lib/dates'
+import { calcWeekly } from './lib/weekly'
 import { uid } from './lib/photos'
 
 const STORAGE_KEY = 'forge.state.v1'
@@ -83,6 +85,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       state.claimedMilestones.includes(m.id),
     ).reduce((sum, m) => sum + m.xp, 0)
     const workoutXp = state.logs.reduce((sum, l) => sum + l.xp, 0)
+    const weekly = state.profile
+      ? calcWeekly(
+          dates,
+          state.profile.startDate,
+          getProgram(state.profile.programId).daysPerWeek,
+        )
+      : null
     return {
       totalWorkouts: state.logs.filter((l) => l.finishedAt).length,
       currentStreak: current,
@@ -90,6 +99,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       totalPhotos: state.photos.length,
       totalXp: workoutXp + milestoneXp,
       weeksIn: state.profile ? weeksSince(state.profile.startDate) : 0,
+      weekCount: weekly?.count ?? 0,
+      weekTarget: weekly?.target ?? 0,
+      weekTargetMet: weekly?.met ?? false,
+      weeklyStreak: weekly?.weeklyStreak ?? 0,
+      mulliganSavedLastWeek: weekly?.mulliganSavedLastWeek ?? false,
     }
   }, [state])
 

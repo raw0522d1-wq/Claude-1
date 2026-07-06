@@ -60,6 +60,37 @@ export function Home({ onStartWorkout, onOpenPaywall }: Props) {
         )}
       </div>
 
+      <div className="card" style={{ marginTop: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: 15 }}>This Week&apos;s Target</h3>
+          <span className={`chip ${stats.weeklyStreak > 0 ? 'accent' : ''}`}>
+            🔥 {stats.weeklyStreak}-week streak
+          </span>
+        </div>
+        <div className="week-dots">
+          {Array.from({ length: stats.weekTarget }, (_, i) => (
+            <div key={i} className={`week-dot ${i < stats.weekCount ? 'hit' : ''}`}>
+              {i < stats.weekCount ? '✓' : ''}
+            </div>
+          ))}
+          <div className="week-dot mulligan" title="One missed workout per week is forgiven">
+            M
+          </div>
+        </div>
+        <p className="small muted" style={{ marginTop: 6 }}>
+          {stats.weekTargetMet
+            ? `Target crushed — ${stats.weekCount}/${stats.weekTarget} sessions banked. Everything else is bonus.`
+            : `${stats.weekCount}/${stats.weekTarget} scheduled sessions done — ${
+                stats.weekTarget - stats.weekCount
+              } to go. Miss one? Your weekly mulligan (M) has you covered — once.`}
+        </p>
+        {stats.mulliganSavedLastWeek && (
+          <p className="small" style={{ color: 'var(--gold)', marginTop: 6 }}>
+            🎟️ Last week survived on your mulligan. Don&apos;t make it a habit.
+          </p>
+        )}
+      </div>
+
       <div className="grid-3" style={{ marginTop: 14 }}>
         <div className="stat">
           <div className="value accent">{stats.currentStreak}</div>

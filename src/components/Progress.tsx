@@ -37,14 +37,19 @@ export function Progress({ onOpenPaywall }: Props) {
           <div className="label">Streak</div>
         </div>
         <div className="stat">
-          <div className="value">{stats.bestStreak}</div>
-          <div className="label">Best Streak</div>
+          <div className="value">🔥{stats.weeklyStreak}</div>
+          <div className="label">Week Streak</div>
         </div>
         <div className="stat">
           <div className="value">{stats.totalWorkouts}</div>
           <div className="label">Workouts</div>
         </div>
       </div>
+      <p className="small muted" style={{ marginTop: 10 }}>
+        Week streak counts every week you hit your program&apos;s scheduled
+        sessions ({stats.weekCount}/{stats.weekTarget} this week). One missed
+        workout per week is forgiven by your mulligan — two breaks the chain.
+      </p>
 
       <div className="section-head">
         <h2>Milestones</h2>

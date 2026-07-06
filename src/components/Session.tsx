@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { getProgram } from '../data/programs'
 import { useStore } from '../store'
 import { PhotoCapture } from './PhotoCapture'
+import { Celebration } from './Celebration'
 import type { WorkoutLog } from '../types'
 
 interface Props {
@@ -21,7 +22,7 @@ function fmtDuration(ms: number): string {
 }
 
 export function Session({ pendingDayIndex, onExit }: Props) {
-  const { state, startSession, toggleExercise, finishSession, abandonSession } = useStore()
+  const { state, stats, startSession, toggleExercise, finishSession, abandonSession } = useStore()
   const profile = state.profile!
   const session = state.session
   const programId = session?.programId ?? profile.programId
@@ -32,6 +33,7 @@ export function Session({ pendingDayIndex, onExit }: Props) {
   const [now, setNow] = useState(Date.now())
   const [checkingOut, setCheckingOut] = useState(false)
   const [summary, setSummary] = useState<WorkoutLog | null>(null)
+  const [celebrated, setCelebrated] = useState(false)
 
   useEffect(() => {
     if (!session) return
@@ -52,6 +54,18 @@ export function Session({ pendingDayIndex, onExit }: Props) {
   // ---------- post-workout summary ----------
   if (summary) {
     const outPhoto = state.photos.find((p) => p.id === summary.checkOutPhotoId)
+    // This workout was the one that hit the weekly target — celebrate.
+    const justHitTarget =
+      stats.weekTargetMet && stats.weekCount === stats.weekTarget
+    if (justHitTarget && !celebrated) {
+      return (
+        <Celebration
+          weeklyStreak={stats.weeklyStreak}
+          weekIndex={stats.weeksIn}
+          onClose={() => setCelebrated(true)}
+        />
+      )
+    }
     return (
       <div className="screen fade-in" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <p className="kicker" style={{ textAlign: 'center' }}>Workout Banked</p>

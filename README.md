@@ -18,6 +18,10 @@ A premium, monetization-ready fitness PWA with a sleek, modern, masculine feel.
 - **Milestones & rewards** — XP, rank levels (RECRUIT → LEGEND), streak
   tracking, and claimable milestone rewards (cheat-meal tokens, rest-day
   passes, badges, titles).
+- **Weekly streaks + mulligan** — a week-streak counter tied to your program's
+  scheduled sessions, a full-screen celebration when the weekly target is hit,
+  and one automatic "mulligan" per week: a single missed workout is forgiven
+  before the chain breaks.
 - **Weekly protocol tips** — a rotating weekly tip for each of diet,
   stretching, aerobic, anaerobic, and resistance training.
 - **Unlimited UGC video clips** — upload short workout example videos (form

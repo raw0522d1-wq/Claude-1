@@ -99,6 +99,16 @@ export interface ProgressStats {
   totalPhotos: number
   totalXp: number
   weeksIn: number
+  /** unique workout days logged this week */
+  weekCount: number
+  /** scheduled workouts per week for the active program */
+  weekTarget: number
+  /** weekly target hit outright this week */
+  weekTargetMet: boolean
+  /** consecutive weeks hitting the target (one mulligan per week) */
+  weeklyStreak: number
+  /** last completed week only counted thanks to the mulligan */
+  mulliganSavedLastWeek: boolean
 }
 
 export interface Tip {
