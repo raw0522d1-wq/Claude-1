@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { MONETIZATION } from '../config'
+import { isNativeApp, purchaseNative, restoreNative, type PlanId } from '../lib/billing'
 import { useStore } from '../store'
 
 interface Props {
@@ -19,13 +20,42 @@ export function Paywall({ onClose }: Props) {
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  function buy(link: string) {
+  async function buy(plan: PlanId, link: string) {
+    setError(null)
+    if (isNativeApp) {
+      // Store policy: digital subscriptions must use In-App Purchase.
+      try {
+        const ok = await purchaseNative(plan)
+        if (ok) {
+          updateProfile({ premium: true })
+          onClose()
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Purchase failed.')
+      }
+      return
+    }
     if (link) {
       window.open(link, '_blank', 'noopener')
     } else {
       setError(
         'Checkout is not wired up yet — add your Stripe Payment Links in src/config.ts, or use an unlock code.',
       )
+    }
+  }
+
+  async function restore() {
+    setError(null)
+    try {
+      const ok = await restoreNative()
+      if (ok) {
+        updateProfile({ premium: true })
+        onClose()
+      } else {
+        setError('No previous purchase found for this account.')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Restore failed.')
     }
   }
 
@@ -66,17 +96,26 @@ export function Paywall({ onClose }: Props) {
 
         <button
           className="btn btn-primary"
-          onClick={() => buy(MONETIZATION.stripeYearlyLink)}
+          onClick={() => buy('yearly', MONETIZATION.stripeYearlyLink)}
         >
           Yearly — {MONETIZATION.yearlyPrice} · {MONETIZATION.yearlySavings}
         </button>
         <button
           className="btn btn-ghost"
           style={{ marginTop: 10 }}
-          onClick={() => buy(MONETIZATION.stripeMonthlyLink)}
+          onClick={() => buy('monthly', MONETIZATION.stripeMonthlyLink)}
         >
           Monthly — {MONETIZATION.monthlyPrice}
         </button>
+        {isNativeApp && (
+          <button
+            className="btn btn-ghost"
+            style={{ marginTop: 10, border: 'none' }}
+            onClick={restore}
+          >
+            Restore Purchases
+          </button>
+        )}
 
         {error && (
           <p className="small" style={{ color: '#ff6b6b', marginTop: 12, textAlign: 'center' }}>

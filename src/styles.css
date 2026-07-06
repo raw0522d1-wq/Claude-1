@@ -56,7 +56,9 @@ body {
 
 .screen {
   flex: 1;
-  padding: 20px 18px 108px;
+  /* safe-area padding keeps content clear of notches and home indicators on native builds */
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 18px
+    calc(108px + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
 }
 

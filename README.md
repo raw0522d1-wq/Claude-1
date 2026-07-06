@@ -44,6 +44,24 @@ and paste them into `src/config.ts` (`stripeMonthlyLink`, `stripeYearlyLink`).
 The paywall opens them directly — no backend needed to launch. An unlock code
 (`founderCode` in the same file, default `FORGED`) lets you comp promo users.
 
+## Native apps (App Store & Google Play)
+
+The repo ships with ready-to-build native projects via Capacitor — `android/`
+(Android Studio → Google Play) and `ios/` (Xcode → App Store) — including app
+icons, splash screens, camera/photo permission declarations, dark status bars,
+and safe-area handling. The paywall is platform-aware: web uses Stripe links,
+native builds route through the In-App Purchase stub in `src/lib/billing.ts`
+(store policy requires IAP for subscriptions).
+
+```bash
+npm run sync      # rebuild web app and copy into both native shells
+npm run android   # open in Android Studio
+npm run ios       # open in Xcode (macOS)
+```
+
+See **STORE_SUBMISSION.md** for the full step-by-step path to both stores,
+and **PRIVACY.md** for a ready-to-host privacy policy.
+
 ## Run it
 
 ```bash
