@@ -27,6 +27,13 @@ A premium, monetization-ready fitness PWA with a sleek, modern, masculine feel.
 - **Unlimited UGC video clips** — upload short workout example videos (form
   demos, session highlights). Stored on-device in IndexedDB with no app-imposed
   limits.
+- **Metric & imperial intake** — the onboarding baseline takes ft/in + lbs or
+  cm + kg; macros are computed identically either way.
+- **Animated form demos** — every exercise row can surface a 5-second stylized
+  animation (bold-ink comic-book look). Clips live in `public/demos/`, the
+  registry is `src/data/demos.ts`, and `scripts/demo-prompts.json` holds the
+  per-exercise Higgsfield generation prompts (47 movements) so the library can
+  be generated or regenerated consistently.
 - **Installable PWA shell** — mobile-first, works great added to a home screen.
 
 ## Monetization

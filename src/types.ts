@@ -1,9 +1,13 @@
 export type Sex = 'male' | 'female'
 
+export type UnitSystem = 'metric' | 'imperial'
+
 export interface UserProfile {
   name: string
   sex: Sex
   age: number
+  /** preferred measurement system for display and input */
+  units?: UnitSystem
   heightCm: number
   weightKg: number
   /** activity multiplier for TDEE */

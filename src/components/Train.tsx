@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { PROGRAMS, getProgram } from '../data/programs'
+import { demoUrlFor } from '../data/demos'
 import { useStore } from '../store'
+import { DemoModal } from './DemoModal'
 
 interface Props {
   onStartWorkout: (dayIndex: number) => void
@@ -14,6 +16,7 @@ export function Train({ onStartWorkout, onOpenPaywall }: Props) {
   const suggestedDay = stats.totalWorkouts % program.days.length
   const [openDay, setOpenDay] = useState<number>(suggestedDay)
   const [switching, setSwitching] = useState(false)
+  const [demo, setDemo] = useState<{ name: string; url: string } | null>(null)
   const locked = program.premium && !profile.premium
 
   if (switching) {
@@ -105,16 +108,27 @@ export function Train({ onStartWorkout, onOpenPaywall }: Props) {
           </div>
           {openDay === i && (
             <div className="fade-in" style={{ marginTop: 12 }}>
-              {day.exercises.map((ex, j) => (
-                <div key={j} className="ex-row" style={{ cursor: 'default' }}>
-                  <div>
-                    <div className="ex-name">{ex.name}</div>
-                    <div className="ex-meta">
-                      {ex.sets} × {ex.reps} · rest {ex.rest}
+              {day.exercises.map((ex, j) => {
+                const demoUrl = demoUrlFor(ex.name)
+                return (
+                  <div key={j} className="ex-row" style={{ cursor: 'default' }}>
+                    <div style={{ flex: 1 }}>
+                      <div className="ex-name">{ex.name}</div>
+                      <div className="ex-meta">
+                        {ex.sets} × {ex.reps} · rest {ex.rest}
+                      </div>
                     </div>
+                    {demoUrl && (
+                      <button
+                        className="demo-btn"
+                        onClick={() => setDemo({ name: ex.name, url: demoUrl })}
+                      >
+                        ▶ Demo
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
               {locked ? (
                 <button className="btn btn-primary" onClick={onOpenPaywall}>
                   🔒 Unlock with Premium
@@ -128,6 +142,9 @@ export function Train({ onStartWorkout, onOpenPaywall }: Props) {
           )}
         </div>
       ))}
+      {demo && (
+        <DemoModal exerciseName={demo.name} url={demo.url} onClose={() => setDemo(null)} />
+      )}
     </div>
   )
 }

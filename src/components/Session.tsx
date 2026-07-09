@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getProgram } from '../data/programs'
+import { demoUrlFor } from '../data/demos'
 import { useStore } from '../store'
 import { PhotoCapture } from './PhotoCapture'
 import { Celebration } from './Celebration'
+import { DemoModal } from './DemoModal'
 import type { WorkoutLog } from '../types'
 
 interface Props {
@@ -34,6 +36,7 @@ export function Session({ pendingDayIndex, onExit }: Props) {
   const [checkingOut, setCheckingOut] = useState(false)
   const [summary, setSummary] = useState<WorkoutLog | null>(null)
   const [celebrated, setCelebrated] = useState(false)
+  const [demo, setDemo] = useState<{ name: string; url: string } | null>(null)
 
   useEffect(() => {
     if (!session) return
@@ -182,6 +185,7 @@ export function Session({ pendingDayIndex, onExit }: Props) {
 
       {day.exercises.map((ex, i) => {
         const done = session.doneExercises.includes(i)
+        const demoUrl = demoUrlFor(ex.name)
         return (
           <div
             key={i}
@@ -189,15 +193,29 @@ export function Session({ pendingDayIndex, onExit }: Props) {
             onClick={() => toggleExercise(i)}
           >
             <div className="ex-check">{done ? '✓' : ''}</div>
-            <div>
+            <div style={{ flex: 1 }}>
               <div className="ex-name">{ex.name}</div>
               <div className="ex-meta">
                 {ex.sets} × {ex.reps} · rest {ex.rest}
               </div>
             </div>
+            {demoUrl && (
+              <button
+                className="demo-btn"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setDemo({ name: ex.name, url: demoUrl })
+                }}
+              >
+                ▶ Demo
+              </button>
+            )}
           </div>
         )
       })}
+      {demo && (
+        <DemoModal exerciseName={demo.name} url={demo.url} onClose={() => setDemo(null)} />
+      )}
 
       <button
         className="btn btn-primary"

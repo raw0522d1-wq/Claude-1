@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { AESTHETICS } from '../data/aesthetics'
 import { programsForAesthetic } from '../data/programs'
 import { todayISO } from '../lib/dates'
+import { ftInToCm, lbsToKg } from '../lib/units'
 import { useStore } from '../store'
-import type { Sex, UserProfile } from '../types'
+import type { Sex, UnitSystem, UserProfile } from '../types'
 import { APP_NAME, APP_TAGLINE } from '../config'
 
 const ACTIVITY_OPTIONS = [
@@ -20,11 +21,21 @@ export function Onboarding() {
   const [name, setName] = useState('')
   const [sex, setSex] = useState<Sex>('male')
   const [age, setAge] = useState(28)
+  const [units, setUnits] = useState<UnitSystem>('imperial')
+  // metric inputs
   const [heightCm, setHeightCm] = useState(180)
   const [weightKg, setWeightKg] = useState(82)
+  // imperial inputs
+  const [heightFt, setHeightFt] = useState(5)
+  const [heightIn, setHeightIn] = useState(11)
+  const [weightLbs, setWeightLbs] = useState(180)
   const [activity, setActivity] = useState(1.55)
   const [aestheticId, setAestheticId] = useState<string | null>(null)
   const [programId, setProgramId] = useState<string | null>(null)
+
+  // canonical metric values regardless of the chosen input system
+  const finalHeightCm = units === 'imperial' ? ftInToCm(heightFt, heightIn) : heightCm
+  const finalWeightKg = units === 'imperial' ? lbsToKg(weightLbs) : weightKg
 
   function finish() {
     if (!aestheticId || !programId) return
@@ -32,8 +43,9 @@ export function Onboarding() {
       name: name.trim() || 'Athlete',
       sex,
       age,
-      heightCm,
-      weightKg,
+      units,
+      heightCm: finalHeightCm,
+      weightKg: finalWeightKg,
       activity,
       aestheticId,
       programId,
@@ -79,6 +91,34 @@ export function Onboarding() {
               placeholder="What do we call you?"
             />
           </label>
+
+          <div className="field">
+            <span
+              style={{
+                display: 'block', fontSize: 12, fontWeight: 600, letterSpacing: '0.1em',
+                textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 7,
+              }}
+            >
+              Measurement System
+            </span>
+            <div className="seg">
+              <button
+                type="button"
+                className={units === 'imperial' ? 'on' : ''}
+                onClick={() => setUnits('imperial')}
+              >
+                Imperial (ft · lbs)
+              </button>
+              <button
+                type="button"
+                className={units === 'metric' ? 'on' : ''}
+                onClick={() => setUnits('metric')}
+              >
+                Metric (cm · kg)
+              </button>
+            </div>
+          </div>
+
           <div className="grid-2">
             <label className="field">
               <span>Sex</span>
@@ -98,25 +138,64 @@ export function Onboarding() {
                 onChange={(e) => setAge(Number(e.target.value) || 0)}
               />
             </label>
-            <label className="field">
-              <span>Height (cm)</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                value={heightCm}
-                onChange={(e) => setHeightCm(Number(e.target.value) || 0)}
-              />
-            </label>
-            <label className="field">
-              <span>Weight (kg)</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                value={weightKg}
-                onChange={(e) => setWeightKg(Number(e.target.value) || 0)}
-              />
-            </label>
           </div>
+
+          {units === 'imperial' ? (
+            <div className="grid-3">
+              <label className="field">
+                <span>Height (ft)</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={3}
+                  max={8}
+                  value={heightFt}
+                  onChange={(e) => setHeightFt(Number(e.target.value) || 0)}
+                />
+              </label>
+              <label className="field">
+                <span>Height (in)</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={11}
+                  value={heightIn}
+                  onChange={(e) => setHeightIn(Number(e.target.value) || 0)}
+                />
+              </label>
+              <label className="field">
+                <span>Weight (lbs)</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={weightLbs}
+                  onChange={(e) => setWeightLbs(Number(e.target.value) || 0)}
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="grid-2">
+              <label className="field">
+                <span>Height (cm)</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={heightCm}
+                  onChange={(e) => setHeightCm(Number(e.target.value) || 0)}
+                />
+              </label>
+              <label className="field">
+                <span>Weight (kg)</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={weightKg}
+                  onChange={(e) => setWeightKg(Number(e.target.value) || 0)}
+                />
+              </label>
+            </div>
+          )}
           <label className="field">
             <span>Activity Level</span>
             <select
@@ -133,7 +212,7 @@ export function Onboarding() {
           <button
             className="btn btn-primary"
             style={{ marginTop: 8 }}
-            disabled={age <= 0 || heightCm <= 0 || weightKg <= 0}
+            disabled={age <= 0 || finalHeightCm <= 0 || finalWeightKg <= 0}
             onClick={() => setStep(2)}
           >
             Next — Choose Your Physique
