@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Higsfield__generate_video",
+      "mcp__Higsfield__generate_image",
+      "mcp__Higsfield__job_display",
+      "mcp__Higsfield__show_generations",
+      "mcp__Higsfield__models_explore",
+      "mcp__Higsfield__balance",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__generate_video",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__generate_image",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__job_display",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__show_generations",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__models_explore",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__balance"
+    ]
+  }
+}
