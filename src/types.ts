@@ -15,6 +15,8 @@ export interface UserProfile {
   aestheticId: string
   programId: string
   premium: boolean
+  /** where the user is training today — drives exercise substitutions */
+  location?: 'gym' | 'home'
   /** ISO date the journey started */
   startDate: string
 }
@@ -81,6 +83,8 @@ export interface WorkoutLog {
 export interface ActiveSession {
   programId: string
   dayIndex: number
+  /** location locked in at check-in so the exercise list can't shift mid-session */
+  location?: 'gym' | 'home'
   checkInPhotoId: string
   startedAt: number
   doneExercises: number[]

@@ -61,7 +61,12 @@ interface Store {
   stats: ProgressStats
   setProfile: (p: UserProfile) => void
   updateProfile: (patch: Partial<UserProfile>) => void
-  startSession: (programId: string, dayIndex: number, checkInDataUrl: string) => void
+  startSession: (
+    programId: string,
+    dayIndex: number,
+    checkInDataUrl: string,
+    location?: 'gym' | 'home',
+  ) => void
   toggleExercise: (index: number) => void
   finishSession: (checkOutDataUrl: string, totalExercises: number) => WorkoutLog | null
   abandonSession: () => void
@@ -118,7 +123,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const startSession = useCallback(
-    (programId: string, dayIndex: number, checkInDataUrl: string) => {
+    (
+      programId: string,
+      dayIndex: number,
+      checkInDataUrl: string,
+      location: 'gym' | 'home' = 'gym',
+    ) => {
       const photo: PhotoRecord = {
         id: uid(),
         date: todayISO(),
@@ -128,6 +138,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const session: ActiveSession = {
         programId,
         dayIndex,
+        location,
         checkInPhotoId: photo.id,
         startedAt: Date.now(),
         doneExercises: [],

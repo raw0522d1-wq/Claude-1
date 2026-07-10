@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getProgram } from '../data/programs'
 import { demoUrlFor } from '../data/demos'
+import { exercisesFor } from '../data/homeSwaps'
 import { useStore } from '../store'
 import { PhotoCapture } from './PhotoCapture'
 import { Celebration } from './Celebration'
@@ -29,8 +30,10 @@ export function Session({ pendingDayIndex, onExit }: Props) {
   const session = state.session
   const programId = session?.programId ?? profile.programId
   const dayIndex = session?.dayIndex ?? pendingDayIndex
+  const location = session?.location ?? profile.location ?? 'gym'
   const program = getProgram(programId)
   const day = program.days[Math.min(dayIndex, program.days.length - 1)]
+  const dayExercises = exercisesFor(day, location)
 
   const [now, setNow] = useState(Date.now())
   const [checkingOut, setCheckingOut] = useState(false)
@@ -45,8 +48,8 @@ export function Session({ pendingDayIndex, onExit }: Props) {
   }, [session])
 
   const doneCount = session?.doneExercises.length ?? 0
-  const progress = day.exercises.length
-    ? doneCount / day.exercises.length
+  const progress = dayExercises.length
+    ? doneCount / dayExercises.length
     : 0
 
   const checkInPhoto = useMemo(
@@ -117,11 +120,12 @@ export function Session({ pendingDayIndex, onExit }: Props) {
         <p className="kicker">Session Gate</p>
         <h1 style={{ fontSize: 26, margin: '6px 0 2px' }}>{day.title}</h1>
         <p className="muted small" style={{ marginBottom: 18 }}>
-          {program.name} · {day.exercises.length} movements
+          {program.name} · {dayExercises.length} movements ·{' '}
+          {location === 'home' ? '🏠 HOME — bodyweight & functional' : '🏋️ GYM'}
         </p>
         <PhotoCapture
           kind="in"
-          onCapture={(dataUrl) => startSession(programId, dayIndex, dataUrl)}
+          onCapture={(dataUrl) => startSession(programId, dayIndex, dataUrl, location)}
         />
         <button className="btn btn-ghost" style={{ marginTop: 14 }} onClick={onExit}>
           Not now
@@ -137,13 +141,13 @@ export function Session({ pendingDayIndex, onExit }: Props) {
         <p className="kicker">Finish Line</p>
         <h1 style={{ fontSize: 26, margin: '6px 0 2px' }}>Prove It</h1>
         <p className="muted small" style={{ marginBottom: 18 }}>
-          {doneCount}/{day.exercises.length} movements done ·{' '}
+          {doneCount}/{dayExercises.length} movements done ·{' '}
           {fmtDuration(now - session.startedAt)} elapsed
         </p>
         <PhotoCapture
           kind="out"
           onCapture={(dataUrl) => {
-            const log = finishSession(dataUrl, day.exercises.length)
+            const log = finishSession(dataUrl, dayExercises.length)
             setSummary(log)
           }}
         />
@@ -163,7 +167,9 @@ export function Session({ pendingDayIndex, onExit }: Props) {
     <div className="screen fade-in">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <p className="kicker">● Live Session</p>
+          <p className="kicker">
+            ● Live Session · {location === 'home' ? '🏠 Home' : '🏋️ Gym'}
+          </p>
           <h2 style={{ margin: '6px 0 2px' }}>{day.title}</h2>
         </div>
         {checkInPhoto && (
@@ -180,10 +186,10 @@ export function Session({ pendingDayIndex, onExit }: Props) {
         <div style={{ width: `${progress * 100}%` }} />
       </div>
       <p className="small muted" style={{ textAlign: 'center', marginBottom: 18 }}>
-        {doneCount} of {day.exercises.length} movements complete
+        {doneCount} of {dayExercises.length} movements complete
       </p>
 
-      {day.exercises.map((ex, i) => {
+      {dayExercises.map((ex, i) => {
         const done = session.doneExercises.includes(i)
         const demoUrl = demoUrlFor(ex.name)
         return (

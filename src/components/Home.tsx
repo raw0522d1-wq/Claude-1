@@ -1,8 +1,10 @@
 import { getAesthetic } from '../data/aesthetics'
 import { getProgram } from '../data/programs'
+import { exercisesFor } from '../data/homeSwaps'
 import { TIP_CATEGORIES, weeklyTips } from '../data/tips'
 import { levelFor } from '../data/milestones'
 import { useStore } from '../store'
+import { LocationToggle } from './LocationToggle'
 
 interface Props {
   onStartWorkout: () => void
@@ -18,6 +20,8 @@ export function Home({ onStartWorkout, onOpenPaywall }: Props) {
   const tips = weeklyTips(stats.weeksIn)
   const dayIndex = stats.totalWorkouts % program.days.length
   const today = program.days[dayIndex]
+  const location = profile.location ?? 'gym'
+  const todayExercises = exercisesFor(today, location)
   const locked = program.premium && !profile.premium
 
   return (
@@ -45,10 +49,12 @@ export function Home({ onStartWorkout, onOpenPaywall }: Props) {
           {aesthetic.icon} {aesthetic.name} · Week {stats.weeksIn + 1}
         </p>
         <h2 style={{ margin: '8px 0 2px' }}>{today.title}</h2>
-        <p className="muted small" style={{ marginBottom: 14 }}>
-          {program.name} — {today.exercises.length} movements ·{' '}
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          {program.name} — {todayExercises.length} movements ·{' '}
           {today.focus.toUpperCase()}
+          {location === 'home' ? ' · BODYWEIGHT / FUNCTIONAL' : ''}
         </p>
+        <LocationToggle />
         {locked ? (
           <button className="btn btn-primary" onClick={onOpenPaywall}>
             🔒 Unlock {program.name} with Premium

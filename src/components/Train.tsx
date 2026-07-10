@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { PROGRAMS, getProgram } from '../data/programs'
 import { demoUrlFor } from '../data/demos'
+import { exercisesFor } from '../data/homeSwaps'
 import { useStore } from '../store'
 import { DemoModal } from './DemoModal'
+import { LocationToggle } from './LocationToggle'
 
 interface Props {
   onStartWorkout: (dayIndex: number) => void
@@ -90,6 +92,14 @@ export function Train({ onStartWorkout, onOpenPaywall }: Props) {
         <h2>Training Days</h2>
         <span className="small muted">Up next: Day {suggestedDay + 1}</span>
       </div>
+      <LocationToggle />
+      {(profile.location ?? 'gym') === 'home' && (
+        <p className="small muted" style={{ margin: '-4px 0 12px' }}>
+          🏠 Home mode — equipment movements swapped for bodyweight and
+          functional equivalents. A backpack loaded with books stands in for
+          weights.
+        </p>
+      )}
 
       {program.days.map((day, i) => (
         <div key={i} className="card">
@@ -108,7 +118,7 @@ export function Train({ onStartWorkout, onOpenPaywall }: Props) {
           </div>
           {openDay === i && (
             <div className="fade-in" style={{ marginTop: 12 }}>
-              {day.exercises.map((ex, j) => {
+              {exercisesFor(day, profile.location ?? 'gym').map((ex, j) => {
                 const demoUrl = demoUrlFor(ex.name)
                 return (
                   <div key={j} className="ex-row" style={{ cursor: 'default' }}>
