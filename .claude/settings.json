@@ -12,7 +12,13 @@
       "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__job_display",
       "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__show_generations",
       "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__models_explore",
-      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__balance"
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__balance",
+      "mcp__Higsfield__media_import_url",
+      "mcp__Higsfield__media_upload",
+      "mcp__Higsfield__media_confirm",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__media_import_url",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__media_upload",
+      "mcp__c1a725a4-18c7-4c3d-9ddc-a5e953e0e865__media_confirm"
     ]
   }
 }
