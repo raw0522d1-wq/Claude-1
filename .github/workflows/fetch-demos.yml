@@ -1,0 +1,41 @@
+name: Fetch demo clips
+
+# Downloads the generated exercise demo videos listed in scripts/demo-urls.json
+# into public/demos/ and commits them to this branch. Run manually from the
+# Actions tab or via workflow_dispatch after regenerating clips.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Download demo clips
+        run: |
+          set -euo pipefail
+          mkdir -p public/demos
+          count=0
+          for slug in $(jq -r 'keys[]' scripts/demo-urls.json); do
+            url=$(jq -r --arg s "$slug" '.[$s]' scripts/demo-urls.json)
+            echo "fetching $slug"
+            curl -fsSL --retry 3 --retry-delay 2 -o "public/demos/$slug.mp4" "$url"
+            count=$((count+1))
+          done
+          echo "downloaded $count clips"
+          du -sh public/demos
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/demos
+          git diff --cached --quiet && echo "nothing to commit" && exit 0
+          git commit -m "Vendor generated exercise demo clips into public/demos"
+          git push
