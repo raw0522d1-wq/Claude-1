@@ -101,8 +101,7 @@ smtSyncWin = input.int(6, "Pivot sync window (bars)", minval = 1, group = gM)
 showLabels = input.bool(true, "Show setup-type labels", group = gV)
 cLong  = input.color(color.new(#2dd4bf, 0), "Long", inline = "c", group = gV)
 cShort = input.color(color.new(#f0616d, 0), "Short", inline = "c", group = gV)
-szSel  = input.string("Small", "Confirmed marker size", options = ["Tiny", "Small", "Normal"], group = gV)
-markSize = szSel == "Tiny" ? size.tiny : szSel == "Normal" ? size.normal : size.small
+// plotshape's size must be a compile-time constant, so it can't be an input dropdown.
 
 // ═══════════════════════════════════════════════════════ CORE SERIES ═══════
 tick    = syminfo.mintick
@@ -489,8 +488,8 @@ if barstate.isconfirmed
 // ═══════════════════════════════════════════════════════ PLOTS ═════════════
 plotshape(showDev and evDevL, "Developing long",  style = shape.circle,       location = location.belowbar, color = color.new(cLong, 45),  size = size.tiny)
 plotshape(showDev and evDevS, "Developing short", style = shape.circle,       location = location.abovebar, color = color.new(cShort, 45), size = size.tiny)
-plotshape(evConfL,            "Confirmed long",   style = shape.triangleup,   location = location.belowbar, color = cLong,  size = markSize)
-plotshape(evConfS,            "Confirmed short",  style = shape.triangledown, location = location.abovebar, color = cShort, size = markSize)
+plotshape(evConfL,            "Confirmed long",   style = shape.triangleup,   location = location.belowbar, color = cLong,  size = size.small)
+plotshape(evConfS,            "Confirmed short",  style = shape.triangledown, location = location.abovebar, color = cShort, size = size.small)
 
 if showLabels and barstate.isconfirmed
     if evConfL
