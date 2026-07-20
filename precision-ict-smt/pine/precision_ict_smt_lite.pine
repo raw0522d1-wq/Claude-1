@@ -57,6 +57,8 @@ enSmtR  = input.bool(true,  "SMT External Reversal (needs SMT on)", group = gS)
 // Note: Breaker Retest is intentionally omitted from Lite (needs the full
 // order-block engine). Use the full indicator/strategy for breaker setups.
 showDev = input.bool(true,  "Show DEVELOPING markers", group = gS)
+devMinPrio = input.int(9, "Developing: ignore levels weaker than…", minval = 1, maxval = 11, group = gS, tooltip = "Level significance: 1=prev month · 2=week · 3=day · 5=Asia · 6=London · 7=premarket · 8=opening range · 9=equal H/L · 10=external swing · 11=internal swing. LOWER = stronger. A developing marker only prints for a swept level at least this significant. Lower this to cut noise.")
+devCooldownBars = input.int(15, "Developing: min bars between markers", minval = 0, group = gS)
 
 useSess = input.bool(false, "Only during a session window", group = gF)
 tzStr   = input.string("America/New_York", "Timezone", group = gF)
@@ -86,10 +88,10 @@ requireFvg    = input.bool(true, "Reversals require a fresh FVG", group = gT)
 cooldownBars  = input.int(8, "Cooldown after a confirmed signal (bars)", minval = 0, group = gT)
 warmupBars    = input.int(250, "Warm-up bars", minval = 50, group = gT)
 
-usePD  = input.bool(true, "Previous day high/low", group = gL)
-usePW  = input.bool(true, "Previous week high/low", group = gL)
-useSwE = input.bool(true, "External swing highs/lows", group = gL)
-useSwI = input.bool(true, "Internal swing highs/lows", group = gL)
+usePD  = input.bool(true,  "Previous day high/low", group = gL)
+usePW  = input.bool(true,  "Previous week high/low", group = gL)
+useSwE = input.bool(true,  "External swing highs/lows", group = gL)
+useSwI = input.bool(false, "Internal swing highs/lows (noisy — off by default)", group = gL)
 
 useSMT     = input.bool(true, "Enable SMT", group = gM)
 smtSym1    = input.symbol("CME_MINI:NQ1!", "Comparison symbol", group = gM)
@@ -98,7 +100,8 @@ smtCorrLen = input.int(50, "Correlation lookback", minval = 10, group = gM)
 smtMinCorr = input.float(0.5, "Min |correlation|", minval = 0.1, maxval = 0.95, step = 0.05, group = gM)
 smtSyncWin = input.int(6, "Pivot sync window (bars)", minval = 1, group = gM)
 
-showLabels = input.bool(true, "Show setup-type labels", group = gV)
+showLabels    = input.bool(true,  "Label CONFIRMED markers with type", group = gV)
+showDevLabels = input.bool(false, "Label DEVELOPING markers with type (adds clutter)", group = gV)
 cLong  = input.color(color.new(#2dd4bf, 0), "Long", inline = "c", group = gV)
 cShort = input.color(color.new(#f0616d, 0), "Short", inline = "c", group = gV)
 // plotshape's size must be a compile-time constant, so it can't be an input dropdown.
@@ -325,6 +328,7 @@ var string rcsKind = ""
 var int    rcsPrio = 99
 var int    rcsStart = 0
 var int    coolUntil = 0
+var int    devCoolUntil = 0
 var int    smtBullBar = -9999
 var int    smtBearBar = -9999
 var int    contBarB = -9999
@@ -426,8 +430,9 @@ if barstate.isconfirmed
             rcbPrio := pb
             rcbStart := sb
             devTypeL := f_provType(true, kb, pb)
-            if devTypeL != ""
+            if devTypeL != "" and pb <= devMinPrio and (not useBias or biasDir >= 0) and bar_index >= devCoolUntil
                 evDevL := true
+                devCoolUntil := bar_index + devCooldownBars
     if rs and not rcsOn and baseGate
         float m = f_lastBefore(swLo, ss)
         if not na(m)
@@ -439,8 +444,9 @@ if barstate.isconfirmed
             rcsPrio := ps
             rcsStart := ss
             devTypeS := f_provType(false, ks, ps)
-            if devTypeS != ""
+            if devTypeS != "" and ps <= devMinPrio and (not useBias or biasDir <= 0) and bar_index >= devCoolUntil
                 evDevS := true
+                devCoolUntil := bar_index + devCooldownBars
 
     // ── confirmation of reversal ──
     if rcbOn
@@ -496,9 +502,9 @@ if showLabels and barstate.isconfirmed
         label.new(bar_index, low,  typeL + " LONG",  style = label.style_label_up,   color = color.new(cLong, 15),  textcolor = color.white, size = size.small)
     if evConfS
         label.new(bar_index, high, typeS + " SHORT", style = label.style_label_down, color = color.new(cShort, 15), textcolor = color.white, size = size.small)
-    if showDev and evDevL
+    if showDevLabels and evDevL
         label.new(bar_index, low,  "dev · " + devTypeL, style = label.style_label_up,   color = color.new(cLong, 70),  textcolor = color.white, size = size.tiny)
-    if showDev and evDevS
+    if showDevLabels and evDevS
         label.new(bar_index, high, "dev · " + devTypeS, style = label.style_label_down, color = color.new(cShort, 70), textcolor = color.white, size = size.tiny)
 
 // ═══════════════════════════════════════════════════════ ALERTS ════════════
