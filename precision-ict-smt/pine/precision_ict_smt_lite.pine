@@ -1,0 +1,511 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+//  PRECISION ICT/SMT — LITE  (v2.0.0-lite)
+//  A stripped-down, signal-only build of the full engine. It marks just four
+//  things, each with the setup type:
+//      · Developing LONG   — teal hollow circle, below bar
+//      · Confirmed  LONG   — teal triangle up, below bar
+//      · Developing SHORT  — red hollow circle, above bar
+//      · Confirmed  SHORT  — red triangle down, above bar
+//
+//  It keeps the full engine's NON-REPAINTING detection (sweep → reclaim →
+//  displacement → MSS, evaluated on CLOSED bars only; HTF & comparison data
+//  via request.security(..., expr[1], lookahead_on) = previous closed bar),
+//  but DROPS the confluence score, risk engine, targets, drawings and dashboard.
+//
+//  "Developing" = a liquidity sweep has been reclaimed and price is awaiting an
+//  MSS. It is a WATCH state — never an executable signal.
+//  "Confirmed"  = MSS + displacement closed the setup; the type is finalized.
+//
+//  Signals track the full engine closely but are NOT guaranteed bar-identical:
+//  the score threshold, risk gates and target-geometry checks are intentionally
+//  absent here. Use the full strategy for execution.
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Precision ICT/SMT — Lite", shorttitle = "ICT/SMT [LITE]", overlay = true, max_labels_count = 500)
+
+// ─────────────────────────────────────────────────────────────── TYPES ─────
+type LiqLevel
+    string  kind
+    float   price
+    bool    isHigh
+    int     confirmBar
+    int     priority
+    bool    swept
+
+type Fvg
+    int     dir
+    int     createdBar
+    bool    active
+    bool    qualified
+
+type Swing
+    float   price
+    int     confirmBar
+
+// ═══════════════════════════════════════════════════════ INPUTS ════════════
+gS = "Setups"
+gF = "Filters (all optional)"
+gT = "Structure & Timing"
+gL = "Liquidity sources"
+gM = "SMT (optional 5th setup)"
+gV = "Style"
+
+enTS    = input.bool(true,  "Turtle Soup (reversal)", group = gS)
+enJud   = input.bool(true,  "Judas Swing (session-open reversal)", group = gS)
+enFvgC  = input.bool(true,  "FVG Continuation", group = gS)
+enSmtR  = input.bool(true,  "SMT External Reversal (needs SMT on)", group = gS)
+// Note: Breaker Retest is intentionally omitted from Lite (needs the full
+// order-block engine). Use the full indicator/strategy for breaker setups.
+showDev = input.bool(true,  "Show DEVELOPING markers", group = gS)
+
+useSess = input.bool(false, "Only during a session window", group = gF)
+tzStr   = input.string("America/New_York", "Timezone", group = gF)
+sessWin = input.session("0930-1100", "Session window", group = gF)
+prefWin = input.session("0930-1030", "Judas / opening window", group = gF)
+useBias = input.bool(false, "Require HTF bias agreement", group = gF)
+biasTf  = input.timeframe("240", "HTF bias timeframe", group = gF)
+
+intL = input.int(3,  "Internal swing L", minval = 1, inline = "i", group = gT)
+intR = input.int(3,  "R", minval = 1, inline = "i", group = gT)
+extL = input.int(10, "External swing L", minval = 2, inline = "e", group = gT)
+extR = input.int(10, "R", minval = 2, inline = "e", group = gT)
+atrLen        = input.int(14, "ATR length", minval = 1, group = gT)
+mssBufTicks   = input.int(1, "MSS buffer (ticks)", minval = 0, group = gT)
+swMinTicks    = input.int(1, "Sweep min penetration (ticks)", minval = 0, group = gT)
+swMinAtr      = input.float(0.05, "Sweep min (ATR)", minval = 0.0, step = 0.05, group = gT)
+swMaxAtr      = input.float(0.75, "Sweep max (ATR)", minval = 0.1, step = 0.05, group = gT)
+swDeadline    = input.int(3, "Reclaim deadline (bars)", minval = 1, group = gT)
+swAcceptBars  = input.int(2, "Acceptance closes → breakout", minval = 1, group = gT)
+lvlMinAge     = input.int(5, "Level min age (bars)", minval = 0, group = gT)
+mssDeadline   = input.int(12, "MSS deadline after reclaim (bars)", minval = 2, group = gT)
+dispAtrMult   = input.float(1.5, "Displacement range ≥ ATR ×", minval = 0.5, step = 0.1, group = gT)
+dispBodyRatio = input.float(0.55, "Displacement body/range ≥", minval = 0.0, maxval = 1.0, step = 0.05, group = gT)
+dispClosePos  = input.float(0.65, "Displacement close location ≥", minval = 0.5, maxval = 1.0, step = 0.05, group = gT)
+fvgMinAtr     = input.float(0.15, "FVG min size (ATR)", minval = 0.0, step = 0.05, group = gT)
+requireFvg    = input.bool(true, "Reversals require a fresh FVG", group = gT)
+cooldownBars  = input.int(8, "Cooldown after a confirmed signal (bars)", minval = 0, group = gT)
+warmupBars    = input.int(250, "Warm-up bars", minval = 50, group = gT)
+
+usePD  = input.bool(true, "Previous day high/low", group = gL)
+usePW  = input.bool(true, "Previous week high/low", group = gL)
+useSwE = input.bool(true, "External swing highs/lows", group = gL)
+useSwI = input.bool(true, "Internal swing highs/lows", group = gL)
+
+useSMT     = input.bool(true, "Enable SMT", group = gM)
+smtSym1    = input.symbol("CME_MINI:NQ1!", "Comparison symbol", group = gM)
+smtInv     = input.bool(false, "Inverse correlation (e.g. vs DXY)", group = gM)
+smtCorrLen = input.int(50, "Correlation lookback", minval = 10, group = gM)
+smtMinCorr = input.float(0.5, "Min |correlation|", minval = 0.1, maxval = 0.95, step = 0.05, group = gM)
+smtSyncWin = input.int(6, "Pivot sync window (bars)", minval = 1, group = gM)
+
+showLabels = input.bool(true, "Show setup-type labels", group = gV)
+cLong  = input.color(color.new(#2dd4bf, 0), "Long", inline = "c", group = gV)
+cShort = input.color(color.new(#f0616d, 0), "Short", inline = "c", group = gV)
+szSel  = input.string("Small", "Confirmed marker size", options = ["Tiny", "Small", "Normal"], group = gV)
+markSize = szSel == "Tiny" ? size.tiny : szSel == "Normal" ? size.normal : size.small
+
+// ═══════════════════════════════════════════════════════ CORE SERIES ═══════
+tick    = syminfo.mintick
+atr     = ta.atr(atrLen)
+mssBuf  = mssBufTicks * tick
+minPenV = math.max(swMinTicks * tick, swMinAtr * atr)
+maxPenV = swMaxAtr * atr
+
+f_in(string s) => not na(time(timeframe.period, s, tzStr))
+inSess = f_in(sessWin)
+inPref = f_in(prefWin)
+sessOk = not useSess or inSess
+newDay  = ta.change(time("D")) != 0
+newWeek = ta.change(time("W")) != 0
+prefOpenEvt  = inPref and not inPref[1]
+barsFromOpen = ta.barssince(prefOpenEvt)
+
+[pdH, pdL] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[pwH, pwL] = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[bC1, bC5] = request.security(syminfo.tickerid, biasTf, [close[1], close[5]], lookahead = barmerge.lookahead_on)
+biasDir = na(bC5) ? 0 : bC1 > bC5 ? 1 : bC1 < bC5 ? -1 : 0
+
+// ═══════════════════════════════════════════════════════ SWINGS ════════════
+phI = ta.pivothigh(high, intL, intR)
+plI = ta.pivotlow(low, intL, intR)
+phE = ta.pivothigh(high, extL, extR)
+plE = ta.pivotlow(low, extL, extR)
+
+var array<Swing> swHi = array.new<Swing>()
+var array<Swing> swLo = array.new<Swing>()
+
+f_push(array<Swing> a, float px) =>
+    array.push(a, Swing.new(px, bar_index))
+    if array.size(a) > 30
+        array.remove(a, 0)
+
+f_lastBefore(array<Swing> a, int beforeBar) =>
+    float p = na
+    int n = array.size(a)
+    if n > 0
+        for i = n - 1 to 0
+            Swing s = array.get(a, i)
+            if s.confirmBar <= beforeBar
+                p := s.price
+                break
+    p
+
+// ═══════════════════════════════════════════════════════ LIQUIDITY ═════════
+var array<LiqLevel> liq = array.new<LiqLevel>()
+
+f_removeKind(string k) =>
+    int n = array.size(liq)
+    if n > 0
+        for i = n - 1 to 0
+            if array.get(liq, i).kind == k
+                array.remove(liq, i)
+
+f_add(string k, float p, bool isHigh, int prio) =>
+    if not na(p)
+        bool dup = false
+        int n = array.size(liq)
+        if n > 0
+            for i = 0 to n - 1
+                LiqLevel L = array.get(liq, i)
+                if L.kind == k and not L.swept and math.abs(L.price - p) <= tick * 0.5
+                    dup := true
+        if not dup
+            array.push(liq, LiqLevel.new(k, p, isHigh, bar_index, prio, false))
+        if array.size(liq) > 60
+            array.remove(liq, 0)
+
+f_cap(string k, int maxN) =>
+    int cnt = 0
+    int n = array.size(liq)
+    if n > 0
+        for i = n - 1 to 0
+            if array.get(liq, i).kind == k
+                cnt += 1
+                if cnt > maxN
+                    array.remove(liq, i)
+
+// ═══════════════════════════════════════════════════════ SWEEP ═════════════
+f_sweep(bool bullSide) =>
+    var LiqLevel tl = na
+    var float ext = na
+    var int startB = 0
+    var int beyondCl = 0
+    bool reclaimed = false
+    string rKind = ""
+    int rPrio = 99
+    float rExt = na
+    int rStart = 0
+    if not na(tl)
+        ext := bullSide ? math.min(ext, low) : math.max(ext, high)
+        float pen = bullSide ? tl.price - ext : ext - tl.price
+        bool beyond = bullSide ? close < tl.price : close > tl.price
+        beyondCl := beyond ? beyondCl + 1 : 0
+        bool reclaim = bullSide ? close > tl.price : close < tl.price
+        if pen > maxPenV or beyondCl >= swAcceptBars or bar_index - startB > swDeadline
+            tl.swept := true
+            tl := na
+        else if reclaim
+            tl.swept := true
+            reclaimed := true
+            rKind := tl.kind
+            rPrio := tl.priority
+            rExt := ext
+            rStart := startB
+            tl := na
+    if na(tl) and not reclaimed
+        LiqLevel best = na
+        int n = array.size(liq)
+        if n > 0
+            for i = 0 to n - 1
+                LiqLevel L = array.get(liq, i)
+                if not L.swept and L.isHigh == (not bullSide) and bar_index - L.confirmBar >= lvlMinAge
+                    float pen2 = bullSide ? L.price - low : high - L.price
+                    if pen2 > maxPenV
+                        L.swept := true
+                    else if pen2 >= minPenV
+                        if na(best) or L.priority < best.priority
+                            best := L
+        if not na(best)
+            bool sameBar = bullSide ? close > best.price : close < best.price
+            if sameBar
+                best.swept := true
+                reclaimed := true
+                rKind := best.kind
+                rPrio := best.priority
+                rExt := bullSide ? low : high
+                rStart := bar_index
+            else
+                tl := best
+                ext := bullSide ? low : high
+                startB := bar_index
+                beyondCl := 1
+    [reclaimed, rKind, rPrio, rExt, rStart]
+
+// ═══════════════════════════════════════════════════════ DISPLACEMENT ══════
+rng    = math.max(high - low, tick)
+body   = math.abs(close - open)
+clPos  = (close - low) / rng
+rngOk  = high - low >= dispAtrMult * atr
+bodyOk = body / rng >= dispBodyRatio
+dispBull = close > open and rngOk and bodyOk and clPos >= dispClosePos
+dispBear = close < open and rngOk and bodyOk and (1 - clPos) >= dispClosePos
+
+// ═══════════════════════════════════════════════════════ FVG ═══════════════
+var array<Fvg> fvgs = array.new<Fvg>()
+fvgBull = low > high[2]
+fvgBear = high < low[2]
+fvgMin  = fvgMinAtr * atr
+
+f_hasFvg(int dir, int fromBar) =>
+    bool found = false
+    int n = array.size(fvgs)
+    if n > 0
+        for i = n - 1 to 0
+            Fvg f = array.get(fvgs, i)
+            if f.active and f.qualified and f.dir == dir and f.createdBar >= fromBar
+                found := true
+                break
+    found
+
+// ═══════════════════════════════════════════════════════ SMT ═══════════════
+[c1h, c1l, c1c] = request.security(smtSym1, timeframe.period, [high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
+corr1 = ta.correlation(ta.change(close), ta.change(c1c), smtCorrLen)
+c1ph  = ta.pivothigh(c1h, extL, extR)
+c1pl  = ta.pivotlow(c1l, extL, extR)
+corrOk   = not na(corr1) and (smtInv ? corr1 <= -smtMinCorr : corr1 >= smtMinCorr)
+smtAvail = useSMT and not na(c1c) and corrOk
+
+var float pH1 = na
+var float pH2 = na
+var int   pH1b = 0
+var float pL1 = na
+var float pL2 = na
+var int   pL1b = 0
+var float xH1 = na
+var float xH2 = na
+var int   xH1b = 0
+var float xL1 = na
+var float xL2 = na
+var int   xL1b = 0
+if not na(c1ph)
+    xH2 := xH1
+    xH1 := c1ph
+    xH1b := bar_index
+if not na(c1pl)
+    xL2 := xL1
+    xL1 := c1pl
+    xL1b := bar_index
+
+f_smtBull() =>
+    bool r = false
+    if smtAvail and not na(pL2) and not na(pL1)
+        bool primLL = pL1 < pL2
+        r := smtInv ? (primLL and not na(xH2) and xH1 <= xH2 and math.abs(pL1b - xH1b) <= smtSyncWin) : (primLL and not na(xL2) and xL1 >= xL2 and math.abs(pL1b - xL1b) <= smtSyncWin)
+    r
+
+f_smtBear() =>
+    bool r = false
+    if smtAvail and not na(pH2) and not na(pH1)
+        bool primHH = pH1 > pH2
+        r := smtInv ? (primHH and not na(xL2) and xL1 >= xL2 and math.abs(pH1b - xL1b) <= smtSyncWin) : (primHH and not na(xH2) and xH1 <= xH2 and math.abs(pH1b - xH1b) <= smtSyncWin)
+    r
+
+// ═══════════════════════════════════════════════════════ STATE ═════════════
+var bool   rcbOn = false
+var float  rcbMss = na
+var int    rcbDead = 0
+var float  rcbExt = na
+var string rcbKind = ""
+var int    rcbPrio = 99
+var int    rcbStart = 0
+var bool   rcsOn = false
+var float  rcsMss = na
+var int    rcsDead = 0
+var float  rcsExt = na
+var string rcsKind = ""
+var int    rcsPrio = 99
+var int    rcsStart = 0
+var int    coolUntil = 0
+var int    smtBullBar = -9999
+var int    smtBearBar = -9999
+var int    contBarB = -9999
+var int    contBarS = -9999
+
+bool evDevL = false
+bool evDevS = false
+bool evConfL = false
+bool evConfS = false
+string typeL = ""
+string typeS = ""
+string devTypeL = ""
+string devTypeS = ""
+
+warm = bar_index > warmupBars
+
+f_provType(bool bull, string liqKind, int prio) =>
+    bool judWin = inPref and barsFromOpen <= 12 and (liqKind == "PDL" or liqKind == "PDH" or liqKind == "PWL" or liqKind == "PWH")
+    string t = (enSmtR and smtAvail and prio <= 6 and (bull ? f_smtBull() : f_smtBear())) ? "SMT_REVERSAL" : (enJud and judWin) ? "JUDAS_SWING" : enTS ? "TURTLE_SOUP" : ""
+    t
+
+if barstate.isconfirmed
+    // ── liquidity refresh ──
+    if newDay and usePD
+        f_removeKind("PDH")
+        f_removeKind("PDL")
+        f_add("PDH", pdH, true, 3)
+        f_add("PDL", pdL, false, 3)
+    if newWeek and usePW
+        f_removeKind("PWH")
+        f_removeKind("PWL")
+        f_add("PWH", pwH, true, 2)
+        f_add("PWL", pwL, false, 2)
+    if not na(phE)
+        f_push(swHi, phE)
+        pH2 := pH1
+        pH1 := phE
+        pH1b := bar_index
+        if useSwE
+            f_add("SWH", phE, true, 10)
+            f_cap("SWH", 4)
+    if not na(plE)
+        f_push(swLo, plE)
+        pL2 := pL1
+        pL1 := plE
+        pL1b := bar_index
+        if useSwE
+            f_add("SWL", plE, false, 10)
+            f_cap("SWL", 4)
+    if not na(phI)
+        f_push(swHi, phI)
+        if useSwI
+            f_add("IWH", phI, true, 11)
+            f_cap("IWH", 3)
+    if not na(plI)
+        f_push(swLo, plI)
+        if useSwI
+            f_add("IWL", plI, false, 11)
+            f_cap("IWL", 3)
+
+    // ── FVG list ──
+    if fvgBull
+        array.push(fvgs, Fvg.new(1, bar_index, true, (low - high[2]) >= fvgMin and (dispBull or dispBull[1])))
+    if fvgBear
+        array.push(fvgs, Fvg.new(-1, bar_index, true, (low[2] - high) >= fvgMin and (dispBear or dispBear[1])))
+    int nf = array.size(fvgs)
+    if nf > 0
+        for i = nf - 1 to 0
+            Fvg f = array.get(fvgs, i)
+            if f.active and f.createdBar < bar_index
+                if f.dir == 1 and low <= high[2]
+                    f.active := false
+                if f.dir == -1 and high >= low[2]
+                    f.active := false
+            if bar_index - f.createdBar > 120
+                array.remove(fvgs, i)
+
+    // ── SMT freshness ──
+    if f_smtBull()
+        smtBullBar := bar_index
+    if f_smtBear()
+        smtBearBar := bar_index
+
+    bool baseGate = warm and sessOk and bar_index >= coolUntil
+
+    // ── sweep engines ──
+    [rb, kb, pb, eb, sb] = f_sweep(true)
+    [rs, ks, ps, es, ss] = f_sweep(false)
+
+    // ── developing (reversal context) ──
+    if rb and not rcbOn and baseGate
+        float m = f_lastBefore(swHi, sb)
+        if not na(m)
+            rcbOn := true
+            rcbMss := m
+            rcbDead := bar_index + mssDeadline
+            rcbExt := eb
+            rcbKind := kb
+            rcbPrio := pb
+            rcbStart := sb
+            devTypeL := f_provType(true, kb, pb)
+            if devTypeL != ""
+                evDevL := true
+    if rs and not rcsOn and baseGate
+        float m = f_lastBefore(swLo, ss)
+        if not na(m)
+            rcsOn := true
+            rcsMss := m
+            rcsDead := bar_index + mssDeadline
+            rcsExt := es
+            rcsKind := ks
+            rcsPrio := ps
+            rcsStart := ss
+            devTypeS := f_provType(false, ks, ps)
+            if devTypeS != ""
+                evDevS := true
+
+    // ── confirmation of reversal ──
+    if rcbOn
+        if bar_index > rcbDead or close < rcbExt
+            rcbOn := false
+        else if close > rcbMss + mssBuf and dispBull
+            bool okArr = not requireFvg or f_hasFvg(1, rcbStart)
+            bool okBias = not useBias or biasDir >= 0
+            string t = f_provType(true, rcbKind, rcbPrio)
+            if okArr and okBias and t != ""
+                evConfL := true
+                typeL := t
+                coolUntil := bar_index + cooldownBars
+            rcbOn := false
+    if rcsOn
+        if bar_index > rcsDead or close > rcsExt
+            rcsOn := false
+        else if close < rcsMss - mssBuf and dispBear
+            bool okArr = not requireFvg or f_hasFvg(-1, rcsStart)
+            bool okBias = not useBias or biasDir <= 0
+            string t = f_provType(false, rcsKind, rcsPrio)
+            if okArr and okBias and t != ""
+                evConfS := true
+                typeS := t
+                coolUntil := bar_index + cooldownBars
+            rcsOn := false
+
+    // ── FVG continuation (confirmed only; bias-aligned) ──
+    if enFvgC and baseGate and not evConfL and not evConfS and biasDir != 0
+        if biasDir == 1 and dispBull and bar_index - contBarB > cooldownBars and fvgBull and (low - high[2]) >= fvgMin
+            float sh = f_lastBefore(swHi, bar_index - 1)
+            if not na(sh) and close > sh + mssBuf
+                contBarB := bar_index
+                evConfL := true
+                typeL := "FVG_CONTINUATION"
+                coolUntil := bar_index + cooldownBars
+        if biasDir == -1 and dispBear and bar_index - contBarS > cooldownBars and fvgBear and (low[2] - high) >= fvgMin
+            float sl = f_lastBefore(swLo, bar_index - 1)
+            if not na(sl) and close < sl - mssBuf
+                contBarS := bar_index
+                evConfS := true
+                typeS := "FVG_CONTINUATION"
+                coolUntil := bar_index + cooldownBars
+
+// ═══════════════════════════════════════════════════════ PLOTS ═════════════
+plotshape(showDev and evDevL, "Developing long",  style = shape.circle,       location = location.belowbar, color = color.new(cLong, 45),  size = size.tiny)
+plotshape(showDev and evDevS, "Developing short", style = shape.circle,       location = location.abovebar, color = color.new(cShort, 45), size = size.tiny)
+plotshape(evConfL,            "Confirmed long",   style = shape.triangleup,   location = location.belowbar, color = cLong,  size = markSize)
+plotshape(evConfS,            "Confirmed short",  style = shape.triangledown, location = location.abovebar, color = cShort, size = markSize)
+
+if showLabels and barstate.isconfirmed
+    if evConfL
+        label.new(bar_index, low,  typeL + " LONG",  style = label.style_label_up,   color = color.new(cLong, 15),  textcolor = color.white, size = size.small)
+    if evConfS
+        label.new(bar_index, high, typeS + " SHORT", style = label.style_label_down, color = color.new(cShort, 15), textcolor = color.white, size = size.small)
+    if showDev and evDevL
+        label.new(bar_index, low,  "dev · " + devTypeL, style = label.style_label_up,   color = color.new(cLong, 70),  textcolor = color.white, size = size.tiny)
+    if showDev and evDevS
+        label.new(bar_index, high, "dev · " + devTypeS, style = label.style_label_down, color = color.new(cShort, 70), textcolor = color.white, size = size.tiny)
+
+// ═══════════════════════════════════════════════════════ ALERTS ════════════
+// Create each alert with trigger = "Once per bar close".
+alertcondition(evDevL,  "Developing LONG",  "ICT/SMT Lite: developing LONG (sweep+reclaim, awaiting MSS)")
+alertcondition(evDevS,  "Developing SHORT", "ICT/SMT Lite: developing SHORT (sweep+reclaim, awaiting MSS)")
+alertcondition(evConfL, "Confirmed LONG",   "ICT/SMT Lite: CONFIRMED LONG")
+alertcondition(evConfS, "Confirmed SHORT",  "ICT/SMT Lite: CONFIRMED SHORT")
+alertcondition(evConfL or evConfS, "Confirmed (either direction)", "ICT/SMT Lite: confirmed setup")
