@@ -42,6 +42,14 @@ type Swing
     float   price
     int     confirmBar
 
+type Pending            // adaptive outcome tracker: an unresolved forward test
+    int     dir
+    int     sIdx
+    float   target
+    float   stop
+    int     expBar
+    int     createBar
+
 // ═══════════════════════════════════════════════════════ INPUTS ════════════
 gS = "Setups"
 gF = "Filters (all optional)"
@@ -105,6 +113,19 @@ showDevLabels = input.bool(false, "Label DEVELOPING markers with type (adds clut
 cLong  = input.color(color.new(#2dd4bf, 0), "Long", inline = "c", group = gV)
 cShort = input.color(color.new(#f0616d, 0), "Short", inline = "c", group = gV)
 // plotshape's size must be a compile-time constant, so it can't be an input dropdown.
+
+gA = "Adaptive learning (experimental)"
+adaptOn       = input.bool(false, "Enable adaptive learning", group = gA, tooltip = "Scores each confirmed signal's forward outcome on CLOSED bars and accumulates a per-setup win record across all chart history + live. It tags new signals with a confidence, can suppress genuinely underperforming setups, and cools off after losing streaks. NON-REPAINTING and causal. NOTE: within a single session the sample is tiny and meaningless — this only becomes useful over hundreds of resolved signals, and it can still overfit. Validate before trusting it.")
+adaptEvalBars = input.int(24, "Outcome horizon (bars)", minval = 3, group = gA)
+adaptStopAtr  = input.float(1.0, "Outcome stop (ATR)", minval = 0.25, step = 0.25, group = gA)
+adaptRr       = input.float(2.0, "Outcome target (R)", minval = 0.5, step = 0.25, group = gA)
+adaptMinN     = input.int(20, "Min resolved samples before adapting", minval = 5, group = gA)
+adaptFloor    = input.float(0.35, "Suppress setup below Wilson-LB win rate", minval = 0.0, maxval = 1.0, step = 0.05, group = gA)
+adaptSuppress = input.bool(false, "Suppress underperforming setups (changes signals)", group = gA)
+coolK         = input.int(3, "Cool-off after N straight losses", minval = 1, group = gA)
+coolBars      = input.int(60, "Cool-off duration (bars)", minval = 0, group = gA)
+adaptReset    = input.string("Never", "Stats reset", options = ["Never", "Daily"], group = gA, tooltip = "Never = accumulate across all history (recommended). Daily = per-session, but samples are far too small to be reliable.")
+showLearn     = input.bool(true, "Show learning table", group = gA)
 
 // ═══════════════════════════════════════════════════════ CORE SERIES ═══════
 tick    = syminfo.mintick
@@ -312,6 +333,20 @@ f_smtBear() =>
         r := smtInv ? (primHH and not na(xL2) and xL1 >= xL2 and math.abs(pH1b - xL1b) <= smtSyncWin) : (primHH and not na(xH2) and xH1 <= xH2 and math.abs(pH1b - xH1b) <= smtSyncWin)
     r
 
+// ═══════════════════════════════════════════════════════ ADAPTIVE HELPERS ══
+f_setupIdx(string t) => t == "TURTLE_SOUP" ? 0 : t == "JUDAS_SWING" ? 1 : t == "FVG_CONTINUATION" ? 2 : t == "BREAKER_RETEST" ? 3 : 4
+
+f_wilsonLB(int w, int n) =>
+    float r = 0.0
+    if n > 0
+        float z = 1.96
+        float phat = w / (n * 1.0)
+        float denom = 1.0 + z * z / n
+        float centre = phat + z * z / (2.0 * n)
+        float margin = z * math.sqrt(phat * (1.0 - phat) / n + z * z / (4.0 * n * n))
+        r := (centre - margin) / denom
+    r
+
 // ═══════════════════════════════════════════════════════ STATE ═════════════
 var bool   rcbOn = false
 var float  rcbMss = na
@@ -329,6 +364,11 @@ var int    rcsPrio = 99
 var int    rcsStart = 0
 var int    coolUntil = 0
 var int    devCoolUntil = 0
+var array<int>     awW = array.new<int>(5, 0)   // adaptive wins per setup idx
+var array<int>     awL = array.new<int>(5, 0)   // adaptive losses per setup idx
+var array<Pending> pend = array.new<Pending>()  // unresolved forward tests
+var int    liveLossStreak = 0
+var int    coolUntilBar = 0
 var int    smtBullBar = -9999
 var int    smtBearBar = -9999
 var int    contBarB = -9999
@@ -342,6 +382,8 @@ string typeL = ""
 string typeS = ""
 string devTypeL = ""
 string devTypeS = ""
+string confL = ""
+string confS = ""
 
 warm = bar_index > warmupBars
 
@@ -491,6 +533,63 @@ if barstate.isconfirmed
                 typeS := "FVG_CONTINUATION"
                 coolUntil := bar_index + cooldownBars
 
+    // ── adaptive learning (non-repainting; adapts using only resolved past) ──
+    if adaptOn
+        if adaptReset == "Daily" and newDay
+            for i = 0 to 4
+                array.set(awW, i, 0)
+                array.set(awL, i, 0)
+            liveLossStreak := 0
+        bool cool = bar_index < coolUntilBar
+        // tag + gate confirmed LONG
+        if evConfL
+            int si = f_setupIdx(typeL)
+            int nn = array.get(awW, si) + array.get(awL, si)
+            float lb = f_wilsonLB(array.get(awW, si), nn)
+            confL := nn < adaptMinN ? "NEW" : lb >= 0.55 ? "HIGH" : lb >= 0.40 ? "MED" : "LOW"
+            bool suppressed = adaptSuppress and nn >= adaptMinN and lb < adaptFloor
+            bool coolVeto = cool and biasDir < 0
+            if suppressed or coolVeto
+                evConfL := false
+            else
+                float rk = adaptStopAtr * atr
+                array.push(pend, Pending.new(1, si, close + adaptRr * rk, close - rk, bar_index + adaptEvalBars, bar_index))
+        // tag + gate confirmed SHORT
+        if evConfS
+            int si = f_setupIdx(typeS)
+            int nn = array.get(awW, si) + array.get(awL, si)
+            float lb = f_wilsonLB(array.get(awW, si), nn)
+            confS := nn < adaptMinN ? "NEW" : lb >= 0.55 ? "HIGH" : lb >= 0.40 ? "MED" : "LOW"
+            bool suppressed = adaptSuppress and nn >= adaptMinN and lb < adaptFloor
+            bool coolVeto = cool and biasDir > 0
+            if suppressed or coolVeto
+                evConfS := false
+            else
+                float rk = adaptStopAtr * atr
+                array.push(pend, Pending.new(-1, si, close - adaptRr * rk, close + rk, bar_index + adaptEvalBars, bar_index))
+        // resolve matured forward tests against this bar (created on earlier bars)
+        int np = array.size(pend)
+        if np > 0
+            for i = np - 1 to 0
+                Pending p = array.get(pend, i)
+                if bar_index > p.createBar
+                    bool hitT = p.dir == 1 ? high >= p.target : low <= p.target
+                    bool hitS = p.dir == 1 ? low <= p.stop : high >= p.stop
+                    bool expd = bar_index >= p.expBar
+                    if hitT or hitS or expd
+                        bool win = hitT and not hitS   // same-bar ambiguity → conservative loss
+                        if win
+                            array.set(awW, p.sIdx, array.get(awW, p.sIdx) + 1)
+                            liveLossStreak := 0
+                        else
+                            array.set(awL, p.sIdx, array.get(awL, p.sIdx) + 1)
+                            liveLossStreak := liveLossStreak + 1
+                            if liveLossStreak >= coolK
+                                coolUntilBar := bar_index + coolBars
+                        array.remove(pend, i)
+        if array.size(pend) > 300
+            array.remove(pend, 0)
+
 // ═══════════════════════════════════════════════════════ PLOTS ═════════════
 plotshape(showDev and evDevL, "Developing long",  style = shape.circle,       location = location.belowbar, color = color.new(cLong, 45),  size = size.tiny)
 plotshape(showDev and evDevS, "Developing short", style = shape.circle,       location = location.abovebar, color = color.new(cShort, 45), size = size.tiny)
@@ -499,9 +598,9 @@ plotshape(evConfS,            "Confirmed short",  style = shape.triangledown, lo
 
 if showLabels and barstate.isconfirmed
     if evConfL
-        label.new(bar_index, low,  typeL + " LONG",  style = label.style_label_up,   color = color.new(cLong, 15),  textcolor = color.white, size = size.small)
+        label.new(bar_index, low,  typeL + " LONG"  + (adaptOn ? " · " + confL : ""), style = label.style_label_up,   color = color.new(cLong, 15),  textcolor = color.white, size = size.small)
     if evConfS
-        label.new(bar_index, high, typeS + " SHORT", style = label.style_label_down, color = color.new(cShort, 15), textcolor = color.white, size = size.small)
+        label.new(bar_index, high, typeS + " SHORT" + (adaptOn ? " · " + confS : ""), style = label.style_label_down, color = color.new(cShort, 15), textcolor = color.white, size = size.small)
     if showDevLabels and evDevL
         label.new(bar_index, low,  "dev · " + devTypeL, style = label.style_label_up,   color = color.new(cLong, 70),  textcolor = color.white, size = size.tiny)
     if showDevLabels and evDevS
@@ -514,3 +613,40 @@ alertcondition(evDevS,  "Developing SHORT", "ICT/SMT Lite: developing SHORT (swe
 alertcondition(evConfL, "Confirmed LONG",   "ICT/SMT Lite: CONFIRMED LONG")
 alertcondition(evConfS, "Confirmed SHORT",  "ICT/SMT Lite: CONFIRMED SHORT")
 alertcondition(evConfL or evConfS, "Confirmed (either direction)", "ICT/SMT Lite: confirmed setup")
+
+// ═══════════════════════════════════════════════════════ LEARNING TABLE ════
+var table lt = table.new(position.bottom_left, 4, 8, bgcolor = color.new(color.black, 20), border_width = 1, border_color = color.new(color.gray, 60))
+f_lt(int c, int r, string s, color tc) =>
+    table.cell(lt, c, r, s, text_color = tc, text_size = size.tiny, text_halign = text.align_left)
+    true
+if adaptOn and showLearn and barstate.islast
+    color hN = color.new(color.silver, 0)
+    color hY = color.new(color.yellow, 0)
+    f_lt(0, 0, "ADAPTIVE", hY)
+    f_lt(1, 0, "n", hY)
+    f_lt(2, 0, "win%", hY)
+    f_lt(3, 0, "Wilson-LB", hY)
+    int rr = 1
+    for si = 0 to 4
+        if si != 3   // breaker not produced in Lite
+            string nm = si == 0 ? "Turtle Soup" : si == 1 ? "Judas" : si == 2 ? "FVG Cont." : "SMT Rev."
+            int wv = array.get(awW, si)
+            int lv = array.get(awL, si)
+            int nv = wv + lv
+            float lbv = f_wilsonLB(wv, nv)
+            bool sup = adaptSuppress and nv >= adaptMinN and lbv < adaptFloor
+            color rc = nv < adaptMinN ? hN : sup ? color.new(color.red, 0) : lbv >= 0.5 ? color.new(color.teal, 0) : hN
+            f_lt(0, rr, nm + (sup ? " ⛔" : ""), rc)
+            f_lt(1, rr, str.tostring(nv), rc)
+            f_lt(2, rr, nv > 0 ? str.tostring(100.0 * wv / nv, "#") + "%" : "—", rc)
+            f_lt(3, rr, nv >= adaptMinN ? str.tostring(100 * lbv, "#") + "%" : "learning…", rc)
+            rr += 1
+    bool coolNow = bar_index < coolUntilBar
+    f_lt(0, 6, "Cool-off", coolNow ? color.new(color.red, 0) : color.new(color.teal, 0))
+    f_lt(1, 6, coolNow ? "ON" : "off", coolNow ? color.new(color.red, 0) : hN)
+    f_lt(2, 6, "streak", hN)
+    f_lt(3, 6, str.tostring(liveLossStreak) + " loss", liveLossStreak >= coolK ? color.new(color.red, 0) : hN)
+    f_lt(0, 7, "Pending tests", hN)
+    f_lt(1, 7, str.tostring(array.size(pend)), hN)
+    f_lt(2, 7, "horizon", hN)
+    f_lt(3, 7, str.tostring(adaptEvalBars) + "b", hN)
