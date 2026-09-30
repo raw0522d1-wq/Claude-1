@@ -7,7 +7,7 @@ name: Launchpad
 
 on:
   push:
-    branches: [launchpad]
+    branches: [launchpad-signing-test]
     paths: ["apps/**"]
   workflow_dispatch:
     inputs:
@@ -61,7 +61,7 @@ jobs:
         app: ${{ fromJson(needs.plan.outputs.apps) }}
     env:
       APP: ${{ matrix.app }}
-      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' }}
+      HAS_KEYSTORE: 'true'
       HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
@@ -81,17 +81,16 @@ jobs:
 
       - name: Load the upload key
         if: env.HAS_KEYSTORE == 'true'
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n' | base64 --decode > "$RUNNER_TEMP/upload.keystore"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/throwaway.jks" -storetype PKCS12 -alias upload -keyalg RSA -keysize 2048 -validity 10000 -storepass testpass123 -keypass testpass123 -dname "CN=Signing Test"
+          base64 -w0 "$RUNNER_TEMP/throwaway.jks" | tr -d ' \r\n' | base64 --decode > "$RUNNER_TEMP/upload.keystore"
           echo "LAUNCHPAD_KEYSTORE=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
 
       - name: Build
         id: build
         working-directory: build/${{ matrix.app }}/android
         env:
-          LAUNCHPAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          LAUNCHPAD_KEYSTORE_PASSWORD: testpass123
           LAUNCHPAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           LAUNCHPAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
@@ -112,6 +111,8 @@ jobs:
             cp "$B/apk/debug/app-debug.apk" "$OUT/$APP-$VERSION-test.apk"
           fi
           ls -la "$OUT"
+          echo "== signature check"; "$ANDROID_HOME"/build-tools/$(ls "$ANDROID_HOME"/build-tools | sort -V | tail -1)/apksigner verify --print-certs "$OUT"/*.apk | head -3
+          keytool -printcert -jarfile "$OUT"/*.aab | head -3
           echo "dir=$OUT" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
@@ -162,7 +163,7 @@ jobs:
   ios:
     name: App Store · ${{ matrix.app }}
     needs: plan
-    if: needs.plan.outputs.apps != '[]' && needs.plan.outputs.ios == 'true'
+    if: false
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
