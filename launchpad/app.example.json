@@ -1,0 +1,13 @@
+{
+  "name": "My App",
+  "homeScreenName": "My App",
+  "id": "com.hrwrightsolutions.myapp",
+  "version": "1.0.0",
+  "backgroundColor": "#FFFFFF",
+  "backgroundColorDark": "#111111",
+  "accentColor": "#2A6743",
+  "orientation": "portrait",
+  "plugins": [],
+  "googlePlay": { "track": "internal" },
+  "appStore": { "iPad": false }
+}

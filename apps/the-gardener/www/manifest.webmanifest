@@ -1,0 +1,18 @@
+{
+  "name": "The Gardener",
+  "short_name": "Gardener",
+  "description": "A daily rhythm for husbands: three tasks, a morning Proverbs prayer, reminders every two hours, a streak, and a journal.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EDF1E8",
+  "theme_color": "#2A6743",
+  "categories": ["lifestyle", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

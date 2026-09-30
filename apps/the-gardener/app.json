@@ -1,0 +1,13 @@
+{
+  "name": "The Gardener",
+  "homeScreenName": "Gardener",
+  "id": "com.hrwrightsolutions.gardener",
+  "version": "1.0.0",
+  "backgroundColor": "#EDF1E8",
+  "backgroundColorDark": "#0C1510",
+  "accentColor": "#2A6743",
+  "orientation": "portrait",
+  "plugins": ["@capacitor/local-notifications", "@capacitor/app"],
+  "googlePlay": { "track": "internal" },
+  "appStore": { "iPad": false }
+}
